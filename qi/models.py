@@ -41,7 +41,7 @@ class AnomalyModel:
         import torch
         from anomalib.models import Patchcore
         self.torch = torch
-        self.model = Patchcore.load_from_checkpoint(str(path), map_location="cpu")
+        self.model = Patchcore.load_from_checkpoint(str(path), map_location="cpu", pre_trained=False)  # weights are in the file, no download
         self.model.eval()
 
     def run(self, image_bgr):
