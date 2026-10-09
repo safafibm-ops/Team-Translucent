@@ -1,63 +1,83 @@
-# Casting Quality Inspection (Team Translucent)
+# Team Translucent: AI Quality Inspection for Cast Parts
 
-AI inspection for cast aluminium parts, built for the Singularity hackathon, Track 3.
+AI that inspects photos of cast aluminium parts and decides **PASS / REVIEW / REJECT** in under half a second on a normal factory PC, with no GPU.
 
-Two models work together on each part photo:
+Built for Singularity 2026, Track 3 (Automotive Component Quality Inspection).
 
-1. **Defect model** (YOLO11s): finds 8 known casting defects (crack, blowholes, shrinkage, cold shot, misrun, flash, scar, scratch) and draws boxes.
-2. **Anomaly model** (PatchCore): trained on good parts only. When the defect model is unsure, it checks whether the part looks unusual and shows a heat-map.
+## The problem
 
-The app then gives a **PASS / REVIEW / REJECT** decision, a **severity** (Low to Critical), the **likely root cause** from machine readings with a confidence score, a **corrective action**, and a **risk forecast** per machine.
+Manual visual inspection is slow and inconsistent, and tired eyes miss cracks. A missed defect means scrap, rework or a recall. Most factory lines have ordinary PCs, not GPUs.
 
-Everything runs on a normal CPU. No GPU is needed in the factory.
+## Our solution
 
-## Results so far
+For every part photo the system gives:
 
-| Model | Data | Test score | CPU time per photo (i5-13450HX) |
-| --- | --- | --- | --- |
-| Defect, YOLO11s | Roboflow casting_dataset_kaggle, 174 test photos | mAP50 0.749 (crack 0.929) | 77 ms (PyTorch), 45 ms (OpenVINO INT8, mAP50 0.722) |
-| Anomaly, PatchCore | Kaggle casting dataset, about 15k-patch memory | image AUROC 0.96, F1 0.88 (524 test parts) | about 330 ms (PyTorch), 206 ms (OpenVINO) on a 4-core CPU |
+- **Decision:** PASS, REVIEW (send to a person) or REJECT
+- **Where and what:** boxes around known defects, plus a heat-map of anything unusual
+- **Severity:** Low, Medium, High or Critical (a crack is never below High)
+- **Root cause and fix:** the likely machine cause, with confidence, and a corrective action
+- **Early warning:** flags a machine whose good parts are slowly drifting, before the first defect
 
-Machine readings are **simulated**, because no public dataset links casting photos to process data. The simulator plants known causes (for example, low injection pressure leads to porosity), and the root-cause model has to find them again.
+## How the engine works
 
-## Run the app
+Two AI models work as a **cascade**:
 
 ```
-python -m venv .venv
-.venv\Scripts\activate          (Windows)   or   source .venv/bin/activate
+Photo
+  └─> 1. Defect model (YOLO11s)        ~77 ms
+        ├─ sure defect found ────────────────> REJECT
+        └─ unsure or nothing found
+              └─> 2. Anomaly model (PatchCore)   ~0.2-0.3 s
+                    ├─ weak box + unusual ─────> REJECT
+                    ├─ unusual, no known defect > REVIEW
+                    ├─ weak box only ──────────> REVIEW
+                    └─ looks like a good part ─> PASS
+```
+
+1. **Defect model** finds and names 8 known casting defects: crack, scratch, blowholes, shrinkage, flash, scar, misrun, cold shot.
+2. **Anomaly model** has learned only what a *good* part looks like, so it also catches defect types it was never shown, and draws a heat-map of where.
+3. **Root cause:** a LightGBM model on machine readings (temperature, pressure, speed, vibration), explained with SHAP, links a defect to its likely cause and fix.
+
+## Models and data
+
+| | Defect model | Anomaly model |
+| --- | --- | --- |
+| Algorithm | YOLO11s (Ultralytics) | PatchCore (Anomalib), WideResNet50 features |
+| Dataset | [casting_dataset_kaggle](https://universe.roboflow.com/detect-casting-defect/casting_dataset_kaggle), Roboflow, CC BY 4.0 | [Casting product image data](https://www.kaggle.com/datasets/ravirajsinh45/real-life-industrial-dataset-of-casting-product), Kaggle |
+| Training images | 1,769 labelled photos (1,239 train / 356 val / 174 test) | 2,875 good parts only, no labels |
+| Test result | mAP50 **0.75** (crack 0.93) | image AUROC **0.96**, F1 **0.88** (524 test parts) |
+| CPU time | 77 ms per photo | 0.2-0.3 s per photo |
+
+Both datasets show the same part, a cast pump impeller.
+
+## Dashboard
+
+React dashboard served by FastAPI: inspect photos, review queue, KPIs (yield, rejects, waiting reviews, check time), early-warning trend per machine, machine risk ranking, work orders, self-learning status and the review range sliders.
+
+## Run it
+
+**Docker (easiest):**
+```
+docker build -t casting-qi .
+docker run -p 8000:7860 casting-qi
+```
+
+**Python:**
+```
 pip install -r requirements.txt
+uvicorn api:app --port 8000
 ```
 
-Copy the trained model files into `models/` (see `models/README.md`), then:
+Open http://localhost:8000. API docs are at http://localhost:8000/docs. Model files are not in git; see `models/README.md`.
 
-```
-streamlit run app.py
-```
+## Tech stack
 
-It opens in the browser. Upload part photos, or type a folder such as `data/casting_rf/test/images`, then click **Inspect**.
+Python 3.11 · PyTorch · Ultralytics YOLO11 · Anomalib PatchCore · OpenVINO · LightGBM + SHAP · FastAPI · React (Vite) · Docker
 
-## Project layout
+## Honest limits
 
-```
-app.py              Streamlit dashboard (inspect parts, line dashboard, how it works)
-qi/config.py        model paths, thresholds, class mapping, corrective actions
-qi/models.py        loads and runs the defect and anomaly models
-qi/decision.py      combines both models into a decision and severity
-qi/process.py       simulated machine data, root cause (LightGBM + SHAP), risk prediction
-scripts/            training scripts for both models
-models/             trained model files (not in git)
-```
+- Machine readings are **simulated**: no public dataset links casting photos to process data.
+- The Roboflow set likely has near-duplicate photos across train and test, so 0.75 mAP50 is somewhat optimistic.
+- Trained on one part type; a new part needs its own good-part photos.
 
-## Train the models
-
-```
-python scripts/check_gpu.py
-python scripts/train_defect.py --data data/casting_rf/data.yaml
-python scripts/train_anomaly.py --data data/kaggle/casting_data/casting_data --n-train 1000 --coreset 0.015
-```
-
-Export the defect model for fast CPU use:
-
-```
-yolo export model=runs/detect/defect_v1/weights/best.pt format=openvino
-```
+More detail: [docs/ENGINEERING.md](docs/ENGINEERING.md) (retraining, versions, review range, CPU optimisation, Docker).
