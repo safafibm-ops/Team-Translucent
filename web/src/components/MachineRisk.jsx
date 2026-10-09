@@ -1,42 +1,60 @@
-const tone = (p) => (p >= 30 ? "red" : p >= 15 ? "amber" : "green");
+// grey means normal; colour only when a machine needs attention
+const tone = (p) => (p >= 30 ? "reject" : p >= 15 ? "review" : "ok");
 
 export default function MachineRisk({ risk }) {
   const alarms = risk.filter((m) => m.spc_alarm).map((m) => m.machine);
   return (
-    <section className="card grow" id="machines">
-      <div className="h">
-        Machine risk · next parts <span className="r muted">LightGBM + SPC</span>
+    <section className="panel" id="machines">
+      <div className="ph">
+        <div className="ph-title">
+          <h2>Machine risk</h2>
+          <p className="sub">Chance of a defect in the next parts · LightGBM + SPC</p>
+        </div>
       </div>
-      {risk.map((m) => {
-        const p = m["predicted_risk_%"];
-        return (
-          <div className="mrow" key={m.machine}>
-            <b>{m.machine}</b>
-            <div className="track">
-              <div className={`fill bg-${tone(p)}`} style={{ width: `${Math.min(100, p)}%` }} />
+      {risk.length === 0 ? (
+        <div className="skeleton-rows" role="status" aria-label="Loading machine risk"><i /><i /><i /><i /></div>
+      ) : (
+        <>
+          <div className="mlist">
+            {risk.map((m) => {
+              const p = m["predicted_risk_%"];
+              return (
+                <div className={`mrow r-${tone(p)}`} key={m.machine}>
+                  <b className="mono m-name">{m.machine}</b>
+                  <div className="track scale" aria-hidden="true">
+                    <div className="fill" style={{ width: `${Math.min(100, p)}%` }} />
+                  </div>
+                  <b className="num m-val">{p}%</b>
+                  <span className="m-detail small">
+                    {m.spc_alarm && <span className="flag">SPC alarm</span>}
+                    <span className="muted">
+                      {m.main_defect === "none" ? "normal" : `mostly ${m.main_defect}`} · recent {m["defect_rate_recent_%"]}%
+                    </span>
+                  </span>
+                </div>
+              );
+            })}
+            <div className="mrow axis-row" aria-hidden="true">
+              <span />
+              <div className="scale-axis num"><span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span></div>
             </div>
-            <b className={tone(p)}>{p}%</b>
-            <span className="muted small">
-              {m.spc_alarm ? "SPC alarm · " : ""}
-              {m.main_defect === "none" ? "normal" : `mostly ${m.main_defect}`} · recent {m["defect_rate_recent_%"]}%
-            </span>
           </div>
-        );
-      })}
-      <div className="tiles">
+        </>
+      )}
+      <dl className="facts">
         <div>
-          <span>Defect model</span>
-          <b>mAP50 0.75</b>
+          <dt>Defect model</dt>
+          <dd className="mono">mAP50 0.75</dd>
         </div>
         <div>
-          <span>Anomaly model</span>
-          <b>AUROC 0.96</b>
+          <dt>Anomaly model</dt>
+          <dd className="mono">AUROC 0.96</dd>
         </div>
         <div>
-          <span>SPC alarm</span>
-          <b className={alarms.length ? "red" : "green"}>{alarms.length ? `${alarms.join(", ")} out` : "none"}</b>
+          <dt>SPC alarm</dt>
+          <dd className={alarms.length ? "t-reject" : ""}>{alarms.length ? `${alarms.join(", ")} out` : "none"}</dd>
         </div>
-      </div>
+      </dl>
     </section>
   );
 }

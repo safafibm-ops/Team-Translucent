@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
+import Icon from "./Icon.jsx";
+import { hhmm } from "../format.js";
 
 // Anomaly model learning from the review queue: every Pass is a confirmed good part.
 // After enough of them, the server retrains on its own and keeps the new model only if it passes the exam.
@@ -37,85 +39,119 @@ export default function SelfLearning({ data, onChange }) {
     }
   }
 
-  if (!s) return null;
+  if (!s) {
+    return (
+      <section className="panel" id="learning">
+        <div className="ph"><div className="ph-title"><h2>Self-learning</h2><p className="sub">The anomaly model learns from parts inspectors pass</p></div></div>
+        <div className="skeleton-rows" role="status" aria-label="Loading self-learning"><i /><i /><i /></div>
+      </section>
+    );
+  }
   const last = s.history?.[0];
+  const examined = s.exam?.defect || s.exam?.good; // with no exam photos the backend keeps a new version unchecked
   const waiting = Math.min(s.waiting, s.needed);
 
   return (
-    <section className="card" id="learning">
-      <div className="h">
-        Self-learning · anomaly model
-        <span className="r violet">using version {s.version}</span>
+    <section className="panel" id="learning">
+      <div className="ph">
+        <div className="ph-title">
+          <h2>Self-learning</h2>
+          <p className="sub">The anomaly model learns from parts inspectors pass</p>
+        </div>
+        <span className="chip-stat accent num"><Icon name="layers" size={14} />using v{s.version}</span>
       </div>
 
-      <div className="versions">
-        <span className="muted small">Versions</span>
-        {(s.versions ?? []).map((v) => (
-          <button
-            key={v.version}
-            className={v.version === s.version ? "sel" : ""}
-            disabled={running || switching !== null || v.version === s.version}
-            onClick={() => pick(v.version)}
-            title={v.version === 1 ? "Original model from training" : `${v.photos} good parts learned · ${v.time ? new Date(v.time).toLocaleString() : ""}`}
-          >
-            v{v.version}
-            <span>{v.version === 1 ? "original" : `+${v.photos} parts`}</span>
-          </button>
-        ))}
-      </div>
-      {note && <div className="note">{note}</div>}
+      <ol className="flow" aria-label="How self-learning works">
+        <li><span className="flow-n">1</span>An inspector passes a part in the review queue</li>
+        <li><span className="flow-n">2</span>At {s.needed} confirmed good parts the model retrains by itself</li>
+        {examined ? (
+          <>
+            <li><span className="flow-n">3</span>It sits an exam on defect photos never used for training</li>
+            <li><span className="flow-n">4</span>The new version is kept only if it passes</li>
+          </>
+        ) : (
+          <li><span className="flow-n">3</span>No exam photos found, so a new version is used without a check</li>
+        )}
+      </ol>
 
       {running ? (
-        <div className="learn">
+        <div className="learn running">
           <div className="learn-row">
             <span className="spin" aria-hidden="true" />
             <b>Retraining</b>
             <span className="muted small">{s.step}</span>
+            <span className="num learn-pct">{Math.round(100 * s.progress)}%</span>
           </div>
-          <div className="track">
-            <div className="fill bg-violet" style={{ width: `${Math.round(100 * s.progress)}%` }} />
+          <div className="track big">
+            <div className="fill" style={{ width: `${Math.round(100 * s.progress)}%` }} />
           </div>
           <div className="muted small">Inspection keeps running on the current model meanwhile.</div>
         </div>
       ) : (
         <div className="learn">
           <div className="learn-row">
-            <b>{waiting} of {s.needed}</b>
+            <b className="num learn-count">{waiting} <span>of {s.needed}</span></b>
             <span className="muted small">
               good parts confirmed by inspectors · retraining starts by itself at {s.needed}
             </span>
           </div>
-          <div className="steps">
+          <div className="steps" aria-hidden="true">
             {Array.from({ length: s.needed }, (_, i) => (
               <span key={i} className={i < waiting ? "on" : ""} />
             ))}
           </div>
-          {s.error && <div className="red small">{s.error}</div>}
+          {s.error && <div className="t-reject small">{s.error}</div>}
         </div>
       )}
 
+      <div className="versions">
+        <div className="versions-head">
+          <span className="eyebrow">Model versions</span>
+          <span className="muted small">pick one to switch inspection to it</span>
+        </div>
+        <div className="vlist">
+          {(s.versions ?? []).map((v) => (
+            <button
+              key={v.version}
+              className={`ver ${v.version === s.version ? "sel" : ""}`}
+              disabled={running || switching !== null || v.version === s.version}
+              aria-pressed={v.version === s.version}
+              onClick={() => pick(v.version)}
+              title={v.version === 1 ? "Original model from training" : `${v.photos} good parts learned · ${v.time ? new Date(v.time).toLocaleString() : ""}`}
+            >
+              <b className="num">v{v.version}</b>
+              <span>{v.version === 1 ? "original" : `+${v.photos} parts`}</span>
+              {v.version === s.version && <em>in use</em>}
+              {switching === v.version && <span className="spin" aria-hidden="true" />}
+            </button>
+          ))}
+        </div>
+      </div>
+      {note && <div className={`note ${note.startsWith("Could not") ? "err" : ""}`} role="status">{note}</div>}
+
       {last && (
         <div className={`learn-last ${last.accepted ? "accepted" : "kept"}`}>
-          <b className={last.accepted ? "green" : "amber"}>
-            Last retrain: {last.accepted ? `created version ${last.version}` : `failed the exam, kept version ${last.version}`}
-          </b>
-          <span className="muted small"> · {new Date(last.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · {last.seconds} s{last.device ? ` on ${last.device}` : ""}</span>
+          <div className="last-head">
+            <span className="last-icon"><Icon name={last.accepted ? "check" : "warn"} size={16} /></span>
+            <b>Last retrain: {last.accepted ? `created version ${last.version}` : `failed the exam, kept version ${last.version}`}</b>
+            <span className="muted small num">{hhmm(last.time)} · {last.seconds} s{last.device ? ` on ${last.device}` : ""}</span>
+          </div>
           <div className="tiles">
             <div>
               <span>Anomaly score of the {last.photos} parts</span>
-              <b>
-                {last.score_before} → <b className={last.score_after < last.score_before ? "green" : ""}>{last.score_after}</b>
+              <b className="num">
+                {last.score_before} <span className="arrow">→</span> <b className={last.score_after < last.score_before ? "t-pass" : ""}>{last.score_after}</b>
               </b>
             </div>
             <div>
               <span>Exam: defect photos caught</span>
-              <b className={last.accepted ? "green" : "red"}>
+              <b className={`num ${last.accepted ? "t-pass" : "t-reject"}`}>
                 {last.new ? `${last.new.caught}/${last.new.defect}` : "not checked"}
               </b>
             </div>
             <div>
               <span>New patterns learned</span>
-              <b>{last.patterns_added}</b>
+              <b className="num">{last.patterns_added}</b>
             </div>
           </div>
           <div className="muted small why">

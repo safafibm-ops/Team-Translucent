@@ -3,10 +3,30 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Live quality inspection for cast aluminium parts: defect boxes, anomaly heat-maps, review queue and early warning." />
+    <meta name="theme-color" content="#f4f5f7" />
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      // pick the theme before the first paint: saved choice, else the computer's setting
+      (function () {
+        var t = "light";
+        try {
+          t = localStorage.getItem("qi-theme");
+          if (t !== "light" && t !== "dark") t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        } catch (e) {
+          t = "light";
+        }
+        document.documentElement.dataset.theme = t;
+        if (t === "dark") document.querySelector('meta[name="theme-color"]').setAttribute("content", "#0b0d10");
+      })();
+    </script>
     <title>Translucent QI</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <script type="module" crossorigin src="/assets/index-Cg6UGjyp.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-CBzOW_7e.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <script type="module" crossorigin src="/assets/index-Dfsn_Ipv.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-Cf5H_JZQ.css">
   </head>
   <body>
     <div id="root"></div>

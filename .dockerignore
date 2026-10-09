@@ -8,3 +8,5 @@ web/node_modules/
 *.zip
 *.rar
 .git/
+models/anomaly/versions/
+.ui-backup/
