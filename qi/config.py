@@ -10,6 +10,7 @@ ANOMALY_MODEL = ROOT / "models" / "anomaly" / "model.ckpt"
 DEFECT_CONF = 0.40      # boxes below this are ignored
 SURE_DEFECT = 0.50      # a box this confident means "known defect", the anomaly model is skipped
 ANOMALY_THRESHOLD = 0.50  # anomaly score above this means "unlike a good part"
+WARNING_LEVEL = 0.35      # early warning: good parts drifting toward the limit
 
 # Dataset class name -> problem-statement category
 CATEGORY = {
@@ -39,3 +40,13 @@ CORRECTIVE_ACTION = {
     ("conveyor_speed", "high"): "Slow the conveyor and check part handling guides.",
     ("cycle_time", "low"): "Cycle is too short; restore standard solidification time.",
 }
+
+# Automatic retraining of the anomaly model from inspector decisions (see qi/retrain.py)
+RETRAIN_AFTER = 5           # confirmed good photos needed to start a retrain
+RETRAIN_ON_GPU = True       # retrain on the graphics card if PyTorch sees one (inspection always stays on the CPU)
+PATTERNS_PER_PHOTO = 200    # at most this many new patch patterns are added per photo
+EXAM_LIMIT = 60             # photos per exam set (more = slower but surer check)
+EXAM_TOLERANCE = 1          # the new model may miss at most this many more defect photos
+EXAM_GOOD_DIR = ROOT / "data" / "exam" / "good"          # optional: known good parts not used for training
+EXAM_DEFECT_DIRS = [ROOT / "data" / "exam" / "defect",   # first folder with photos is used
+                    ROOT.parent / "casting-qi" / "data" / "casting_rf" / "test" / "images"]

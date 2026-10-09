@@ -1,8 +1,10 @@
 ultralytics==8.4.174
 anomalib==2.7.0
 openvino>=2025.0
-streamlit>=1.40
 lightgbm>=4.0
 shap>=0.45
 pandas
 opencv-python
+fastapi
+uvicorn
+python-multipart

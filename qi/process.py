@@ -128,6 +128,7 @@ class RootCause:
                 "factor": f, "value": round(float(X.iloc[0, idx]), 2), "unit": UNITS.get(f, ""),
                 "normal": round(float(self.means[f]), 2), "direction": direction,
                 "action": config.CORRECTIVE_ACTION[(f, direction)],
+                "impact": round(float(contrib[idx]), 3),
             })
         # confidence that this defect type comes from these readings, given the part is defective
         conf = prob[cls] / max(1e-6, 1 - prob[0]) if cls else prob[cls]
@@ -152,3 +153,62 @@ class RootCause:
                 "main_defect": top.index[0] if len(top) else "none",
             })
         return pd.DataFrame(out).sort_values("predicted_risk_%", ascending=False)
+
+
+def simulate_good_scores(history, seed=11):
+    """Simulated anomaly scores of GOOD parts over time (early warning).
+
+    A part can pass and still look slightly less "normal" when its machine drifts.
+    Planted link: falling injection pressure, high vibration and an old die raise the score
+    of parts that still pass. Real plants would log the anomaly model's actual scores.
+    """
+    rng = np.random.default_rng(seed)
+    good = history[history["defect"] == "none"].copy()
+    good["score"] = (0.12
+                     + 0.011 * np.clip(88 - good["injection_pressure"], 0, None)
+                     + 0.04 * np.clip(good["vibration"] - 2.5, 0, None)
+                     + 8e-7 * np.clip(good["die_age"] - 30000, 0, None)
+                     + rng.normal(0, 0.02, len(good))).clip(0.02, 0.95)
+    good["live"] = False
+    return good[["machine", "time", "score", "live"]].reset_index(drop=True)
+
+
+def early_warning(scores, warning, limit, bin_size=20, fit_bins=8, horizon_h=8):
+    """Trend of good-part scores per machine, with a straight-line forecast to the reject limit."""
+    out = []
+    for m in MACHINES:
+        s = scores[scores["machine"] == m].sort_values("time")
+        if s.empty:
+            continue
+        sim = s[~s["live"]].reset_index(drop=True)
+        g = sim.groupby(sim.index // bin_size).agg(time=("time", "last"), score=("score", "mean"))
+        g = pd.concat([g, s.loc[s["live"], ["time", "score"]]], ignore_index=True)   # live parts stay as single points
+        t_h = (g["time"] - g["time"].iloc[0]).dt.total_seconds() / 3600
+        tail = g.tail(fit_bins)
+        th = t_h.tail(fit_bins)
+        slope = float(np.polyfit(th, tail["score"], 1)[0]) if len(tail) >= 3 else 0.0
+        last = float(tail["score"].iloc[-1])
+        hours_to_limit = (limit - last) / slope if slope > 1e-4 and last < limit else None
+        hours_to_warning = (warning - last) / slope if slope > 1e-4 and last < warning else None
+        if last >= warning or (hours_to_limit is not None and hours_to_limit <= horizon_h):
+            status = "alert"
+        elif slope > 0.01:
+            status = "watch"
+        else:
+            status = "ok"
+        t_last = g["time"].iloc[-1]
+        forecast = []
+        if slope > 1e-4:
+            for h in (1, 2, 3):
+                forecast.append({"time": (t_last + pd.Timedelta(hours=h)).isoformat(),
+                                 "score": round(min(1.0, last + slope * h), 3)})
+        out.append({
+            "machine": m, "status": status, "last_score": round(last, 3),
+            "slope_per_hour": round(slope, 4),
+            "hours_to_warning": round(hours_to_warning, 1) if hours_to_warning is not None else None,
+            "hours_to_limit": round(hours_to_limit, 1) if hours_to_limit is not None else None,
+            "points": [{"time": t.isoformat(), "score": round(float(v), 3)} for t, v in zip(g["time"], g["score"])],
+            "forecast": forecast,
+        })
+    order = {"alert": 0, "watch": 1, "ok": 2}
+    return sorted(out, key=lambda r: (order[r["status"]], -r["last_score"]))

@@ -9,3 +9,5 @@ models/**/*.ckpt
 models/**/*_openvino_model/
 *.rar
 *.zip
+web/node_modules/
+models/anomaly/versions/
